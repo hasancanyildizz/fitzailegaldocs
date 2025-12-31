@@ -17,7 +17,8 @@
       "bundleIdentifier": "com.habittracker.app",
       "buildNumber": "1",
       "infoPlist": {
-        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized reminders."
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized reminders.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -45,8 +46,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "your-project-id"
+        "projectId": "731d2794-8961-4a09-8e0d-4e3a53e5f842"
       }
-    }
+    },
+    "owner": "hsncnyldz"
   }
 }

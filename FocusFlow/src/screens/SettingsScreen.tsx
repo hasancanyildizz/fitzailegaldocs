@@ -1,12 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Linking, Share, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { CaretLeft, Clock, Timer, Coffee, Minus, Plus, SpeakerHigh, Shield, FileText } from 'phosphor-react-native';
+import { CaretLeft, Clock, Timer, Coffee, Minus, Plus, SpeakerHigh, Shield, FileText, Target, Export, Trash } from 'phosphor-react-native';
 import { COLORS, FONTS, SPACING, LAYOUT } from '../constants/Theme';
 import { useTimerStore } from '../store/timerStore';
+import { useTaskStore } from '../store/taskStore';
 import * as Haptics from 'expo-haptics';
-import { Platform } from 'react-native';
 
 export default function SettingsScreen() {
     const navigation = useNavigation();
@@ -17,8 +17,99 @@ export default function SettingsScreen() {
         autoStartBreaks,
         autoStartPomodoros,
         soundEnabled,
+        dailyGoal,
         setDuration,
+        setDailyGoal,
     } = useTimerStore();
+
+    const { tasks } = useTaskStore();
+    const timerState = useTimerStore.getState();
+
+    const adjustDailyGoal = (delta: number) => {
+        hapticFeedback();
+        const newGoal = Math.max(1, Math.min(20, dailyGoal + delta));
+        setDailyGoal(newGoal);
+    };
+
+    const handleExportData = async () => {
+        try {
+            const exportData = {
+                exportDate: new Date().toISOString(),
+                version: '1.0',
+                settings: {
+                    focusDuration,
+                    shortBreakDuration,
+                    longBreakDuration,
+                    dailyGoal,
+                    autoStartBreaks,
+                    autoStartPomodoros,
+                    soundEnabled,
+                },
+                statistics: {
+                    pomodorosCompleted: timerState.pomodorosCompleted,
+                    dailyPomodoros: timerState.dailyPomodoros,
+                    dailyHistory: timerState.dailyHistory,
+                },
+                tasks,
+            };
+
+            const jsonString = JSON.stringify(exportData, null, 2);
+
+            if (Platform.OS === 'web') {
+                navigator.clipboard.writeText(jsonString);
+                Alert.alert('Exported', 'Data copied to clipboard!');
+            } else {
+                await Share.share({
+                    message: jsonString,
+                    title: 'FocusFlow Export',
+                });
+            }
+        } catch (error) {
+            Alert.alert('Error', 'Failed to export data');
+        }
+    };
+
+    const handleClearData = () => {
+        Alert.alert(
+            'Clear All Data',
+            'Are you sure? This will reset all statistics, tasks, and settings to defaults. This cannot be undone.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Clear All',
+                    style: 'destructive',
+                    onPress: () => {
+                        // Reset timer store
+                        const today = new Date();
+                        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                        useTimerStore.setState({
+                            focusDuration: 25 * 60,
+                            shortBreakDuration: 5 * 60,
+                            longBreakDuration: 15 * 60,
+                            autoStartBreaks: false,
+                            autoStartPomodoros: false,
+                            soundEnabled: true,
+                            timeLeft: 25 * 60,
+                            mode: 'focus',
+                            status: 'idle',
+                            pomodorosCompleted: 0,
+                            dailyPomodoros: 0,
+                            dailyGoal: 8,
+                            lastActiveDate: todayStr,
+                            dailyHistory: [],
+                            timerStartedAt: null,
+                        });
+                        // Reset task store
+                        useTaskStore.setState({
+                            tasks: [],
+                            selectedTaskId: null,
+                        });
+                        Alert.alert('Success', 'All data has been cleared.');
+                    },
+                },
+            ]
+        );
+    };
 
     const hapticFeedback = () => {
         if (Platform.OS !== 'web') {
@@ -153,6 +244,40 @@ export default function SettingsScreen() {
                     </View>
                 </View>
 
+                {/* Daily Goal */}
+                <Text style={styles.sectionTitle}>Daily Goal</Text>
+
+                <View style={styles.settingCard}>
+                    <View style={styles.settingRow}>
+                        <View style={styles.settingInfo}>
+                            <View style={[styles.iconContainer, { backgroundColor: '#FFB800' + '20' }]}>
+                                <Target size={20} color="#FFB800" weight="fill" />
+                            </View>
+                            <View>
+                                <Text style={styles.settingLabel}>Pomodoros per Day</Text>
+                                <Text style={styles.settingDescription}>
+                                    Your daily focus goal
+                                </Text>
+                            </View>
+                        </View>
+                        <View style={styles.durationControl}>
+                            <TouchableOpacity
+                                style={styles.adjustButton}
+                                onPress={() => adjustDailyGoal(-1)}
+                            >
+                                <Minus size={18} color={COLORS.text} weight="bold" />
+                            </TouchableOpacity>
+                            <Text style={styles.durationText}>{dailyGoal}</Text>
+                            <TouchableOpacity
+                                style={styles.adjustButton}
+                                onPress={() => adjustDailyGoal(1)}
+                            >
+                                <Plus size={18} color={COLORS.text} weight="bold" />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+
                 {/* Auto-start Settings */}
                 <Text style={styles.sectionTitle}>Automation</Text>
 
@@ -229,6 +354,42 @@ export default function SettingsScreen() {
                         <Text style={styles.infoValue}>FocusFlow</Text>
                     </View>
                 </View>
+
+                {/* Data Management */}
+                <Text style={styles.sectionTitle}>Data</Text>
+
+                <TouchableOpacity style={styles.exportCard} onPress={handleExportData}>
+                    <View style={styles.settingInfo}>
+                        <View style={[styles.iconContainer, { backgroundColor: COLORS.primary + '20' }]}>
+                            <Export size={20} color={COLORS.primary} weight="fill" />
+                        </View>
+                        <View>
+                            <Text style={styles.settingLabel}>Export Data</Text>
+                            <Text style={styles.settingDescription}>
+                                Export settings and statistics
+                            </Text>
+                        </View>
+                    </View>
+                    <Text style={{ color: COLORS.textSecondary }}>→</Text>
+                </TouchableOpacity>
+
+                {/* Danger Zone */}
+                <Text style={styles.sectionTitle}>Danger Zone</Text>
+
+                <TouchableOpacity style={styles.dangerCard} onPress={handleClearData}>
+                    <View style={styles.settingInfo}>
+                        <View style={[styles.iconContainer, { backgroundColor: '#FF4444' + '20' }]}>
+                            <Trash size={20} color="#FF4444" weight="fill" />
+                        </View>
+                        <View>
+                            <Text style={[styles.settingLabel, { color: '#FF4444' }]}>Clear All Data</Text>
+                            <Text style={styles.settingDescription}>
+                                Reset everything to defaults
+                            </Text>
+                        </View>
+                    </View>
+                    <Text style={{ color: COLORS.textSecondary }}>→</Text>
+                </TouchableOpacity>
 
                 {/* Legal */}
                 <Text style={styles.sectionTitle}>Legal</Text>
@@ -382,5 +543,27 @@ const styles = StyleSheet.create({
         height: 1,
         backgroundColor: COLORS.surfaceLight,
         marginVertical: SPACING.s,
+    },
+    exportCard: {
+        backgroundColor: COLORS.surface,
+        borderRadius: LAYOUT.borderRadius.m,
+        padding: SPACING.m,
+        marginBottom: SPACING.s,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        borderWidth: 1,
+        borderColor: COLORS.primary + '30',
+    },
+    dangerCard: {
+        backgroundColor: COLORS.surface,
+        borderRadius: LAYOUT.borderRadius.m,
+        padding: SPACING.m,
+        marginBottom: SPACING.s,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        borderWidth: 1,
+        borderColor: '#FF4444' + '30',
     },
 });

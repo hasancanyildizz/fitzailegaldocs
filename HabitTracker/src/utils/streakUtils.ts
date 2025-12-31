@@ -124,11 +124,13 @@ export const calculateLongestStreak = (checkIns: CheckIn[], habitId: string): nu
 export const calculateHabitStats = (
   checkIns: CheckIn[],
   habitId: string,
-  createdAt: string
+  createdAt: string,
+  frequency: 'daily' | 'weekly' = 'daily',
+  targetDays?: number[]
 ): HabitStats => {
   const habitCheckIns = checkIns.filter(c => c.habitId === habitId);
   const totalCompletions = habitCheckIns.length;
-  const currentStreak = calculateStreak(checkIns, habitId);
+  const currentStreak = calculateStreak(checkIns, habitId, frequency, targetDays);
   const longestStreak = calculateLongestStreak(checkIns, habitId);
 
   // Calculate completion rate (last 30 days)
@@ -160,7 +162,7 @@ export const isCompletedToday = (checkIns: CheckIn[], habitId: string): boolean 
 // Calculate XP for completing a habit
 export const calculateXP = (streak: number): number => {
   const baseXP = 10;
-  const streakBonus = Math.min(streak * 2, 50); // Max 50 bonus XP
+  const streakBonus = Math.min(streak * 2, 100); // Max 100 bonus XP for engaged users
   return baseXP + streakBonus;
 };
 

@@ -24,6 +24,7 @@ export const FONTS = {
   regular: 'System',
   bold: 'System',
   size: {
+    xs: 10,
     s: 12,
     m: 16,
     l: 20,

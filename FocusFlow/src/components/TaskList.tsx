@@ -6,24 +6,49 @@ import {
     FlatList,
     TextInput,
     TouchableOpacity,
-    Keyboard
+    Keyboard,
+    Modal,
+    KeyboardAvoidingView,
+    Platform,
 } from 'react-native';
 import { useTaskStore, BoxTask } from '../store/taskStore';
 import { COLORS, FONTS, SPACING, LAYOUT } from '../constants/Theme';
-import { Check, Trash, Plus, Target } from 'phosphor-react-native';
+import { Check, Trash, Plus, Target, PencilSimple, X, Minus } from 'phosphor-react-native';
 import * as Haptics from 'expo-haptics';
 
 export default function TaskList() {
-    const { tasks, addTask, toggleTask, deleteTask, selectTask, selectedTaskId } = useTaskStore();
+    const { tasks, addTask, updateTask, toggleTask, deleteTask, selectTask, selectedTaskId } = useTaskStore();
     const [newTaskTitle, setNewTaskTitle] = useState('');
+    const [newTaskEstimate, setNewTaskEstimate] = useState(1);
     const [isAdding, setIsAdding] = useState(false);
+
+    // Edit modal state
+    const [editingTask, setEditingTask] = useState<BoxTask | null>(null);
+    const [editTitle, setEditTitle] = useState('');
+    const [editEstimate, setEditEstimate] = useState(1);
 
     const handleAddTask = () => {
         if (newTaskTitle.trim()) {
-            addTask(newTaskTitle.trim(), 1); // Default estimate 1
+            addTask(newTaskTitle.trim(), newTaskEstimate);
             setNewTaskTitle('');
+            setNewTaskEstimate(1);
             setIsAdding(false);
             Keyboard.dismiss();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+    };
+
+    const openEditModal = (task: BoxTask) => {
+        setEditingTask(task);
+        setEditTitle(task.title);
+        setEditEstimate(task.pomodorosEstimate);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    };
+
+    const handleSaveEdit = () => {
+        if (editingTask && editTitle.trim()) {
+            updateTask(editingTask.id, editTitle.trim(), editEstimate);
+            setEditingTask(null);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
     };
@@ -63,6 +88,13 @@ export default function TaskList() {
             </View>
 
             <TouchableOpacity
+                onPress={() => openEditModal(item)}
+                style={styles.editButton}
+            >
+                <PencilSimple size={18} color={COLORS.primary} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
                 onPress={() => {
                     deleteTask(item.id);
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -75,7 +107,11 @@ export default function TaskList() {
     );
 
     return (
-        <View style={styles.container}>
+        <KeyboardAvoidingView
+            style={styles.container}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+        >
             <Text style={styles.header}>TASKS</Text>
 
             <FlatList
@@ -84,6 +120,7 @@ export default function TaskList() {
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={styles.listContent}
                 style={styles.list}
+                keyboardShouldPersistTaps="handled"
             />
 
             <View style={styles.inputContainer}>
@@ -94,12 +131,61 @@ export default function TaskList() {
                     value={newTaskTitle}
                     onChangeText={setNewTaskTitle}
                     onSubmitEditing={handleAddTask}
+                    returnKeyType="done"
                 />
                 <TouchableOpacity style={styles.addButton} onPress={handleAddTask}>
                     <Plus size={24} color={COLORS.background} weight="bold" />
                 </TouchableOpacity>
             </View>
-        </View>
+
+            {/* Edit Task Modal */}
+            <Modal
+                visible={editingTask !== null}
+                animationType="fade"
+                transparent={true}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Edit Task</Text>
+                            <TouchableOpacity onPress={() => setEditingTask(null)}>
+                                <X size={24} color={COLORS.text} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.modalLabel}>Task Name</Text>
+                        <TextInput
+                            style={styles.modalInput}
+                            value={editTitle}
+                            onChangeText={setEditTitle}
+                            placeholder="Task name"
+                            placeholderTextColor={COLORS.textSecondary}
+                        />
+
+                        <Text style={styles.modalLabel}>Estimated Pomodoros</Text>
+                        <View style={styles.estimateContainer}>
+                            <TouchableOpacity
+                                style={styles.estimateButton}
+                                onPress={() => setEditEstimate(Math.max(1, editEstimate - 1))}
+                            >
+                                <Minus size={20} color={COLORS.text} weight="bold" />
+                            </TouchableOpacity>
+                            <Text style={styles.estimateValue}>{editEstimate}</Text>
+                            <TouchableOpacity
+                                style={styles.estimateButton}
+                                onPress={() => setEditEstimate(editEstimate + 1)}
+                            >
+                                <Plus size={20} color={COLORS.text} weight="bold" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <TouchableOpacity style={styles.saveButton} onPress={handleSaveEdit}>
+                            <Text style={styles.saveButtonText}>Save Changes</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+        </KeyboardAvoidingView>
     );
 }
 
@@ -171,6 +257,9 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
         fontSize: FONTS.size.s,
     },
+    editButton: {
+        padding: SPACING.s,
+    },
     deleteButton: {
         padding: SPACING.s,
     },
@@ -194,5 +283,78 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.primary,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    // Modal styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: SPACING.l,
+    },
+    modalContent: {
+        backgroundColor: COLORS.surface,
+        borderRadius: LAYOUT.borderRadius.l,
+        padding: SPACING.l,
+        width: '100%',
+        maxWidth: 400,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: SPACING.l,
+    },
+    modalTitle: {
+        color: COLORS.text,
+        fontSize: FONTS.size.xl,
+        fontWeight: 'bold',
+    },
+    modalLabel: {
+        color: COLORS.textSecondary,
+        fontSize: FONTS.size.s,
+        marginBottom: SPACING.xs,
+        marginTop: SPACING.m,
+    },
+    modalInput: {
+        backgroundColor: COLORS.background,
+        borderRadius: LAYOUT.borderRadius.m,
+        padding: SPACING.m,
+        color: COLORS.text,
+        fontSize: FONTS.size.m,
+    },
+    estimateContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: SPACING.l,
+        marginTop: SPACING.s,
+    },
+    estimateButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: COLORS.background,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    estimateValue: {
+        color: COLORS.text,
+        fontSize: FONTS.size.xxl,
+        fontWeight: 'bold',
+        minWidth: 40,
+        textAlign: 'center',
+    },
+    saveButton: {
+        backgroundColor: COLORS.primary,
+        borderRadius: LAYOUT.borderRadius.m,
+        padding: SPACING.m,
+        alignItems: 'center',
+        marginTop: SPACING.xl,
+    },
+    saveButtonText: {
+        color: COLORS.background,
+        fontSize: FONTS.size.m,
+        fontWeight: 'bold',
     },
 });

@@ -6,6 +6,7 @@ import AddHabitScreen from '../screens/AddHabitScreen';
 import EditHabitScreen from '../screens/EditHabitScreen';
 import StatisticsScreen from '../screens/StatisticsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import ArchiveScreen from '../screens/ArchiveScreen';
 import { COLORS } from '../constants/Theme';
 
 export type RootStackParamList = {
@@ -14,6 +15,7 @@ export type RootStackParamList = {
     EditHabit: { habitId: string };
     Statistics: undefined;
     Settings: undefined;
+    Archive: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -70,6 +72,14 @@ export default function AppNavigator() {
                     options={{
                         title: 'Settings',
                         presentation: 'modal',
+                        headerShown: false,
+                    }}
+                />
+                <Stack.Screen
+                    name="Archive"
+                    component={ArchiveScreen}
+                    options={{
+                        title: 'Archive',
                         headerShown: false,
                     }}
                 />

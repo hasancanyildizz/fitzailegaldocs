@@ -17,6 +17,7 @@ interface TaskState {
     selectedTaskId: string | null;
 
     addTask: (title: string, estimate: number) => void;
+    updateTask: (id: string, title: string, estimate: number) => void;
     toggleTask: (id: string) => void;
     deleteTask: (id: string) => void;
     selectTask: (id: string | null) => void;
@@ -40,6 +41,13 @@ export const useTaskStore = create<TaskState>()(
                 };
                 set((state) => ({ tasks: [newTask, ...state.tasks] }));
             },
+
+            updateTask: (id, title, estimate) =>
+                set((state) => ({
+                    tasks: state.tasks.map((t) =>
+                        t.id === id ? { ...t, title, pomodorosEstimate: estimate } : t
+                    ),
+                })),
 
             toggleTask: (id) =>
                 set((state) => ({

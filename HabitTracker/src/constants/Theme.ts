@@ -35,6 +35,7 @@ export const FONTS = {
   regular: 'System', // Will replace with custom font later
   bold: 'System',
   size: {
+    xs: 10,
     s: 12,
     m: 16,
     l: 20,

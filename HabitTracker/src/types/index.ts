@@ -9,6 +9,7 @@ export interface Habit {
   targetDays?: number[]; // 0-6 for weekly (0 = Sunday)
   reminderTime?: string; // HH:mm format (e.g., "09:00")
   notificationId?: string; // Expo notification identifier
+  archived?: boolean; // If true, habit is archived (hidden from main view)
 }
 
 // Check-in record for a specific date
@@ -46,4 +47,6 @@ export type RootStackParamList = {
   AddHabit: undefined;
   EditHabit: { habitId: string };
   Statistics: undefined;
+  Settings: undefined;
+  Archive: undefined;
 };

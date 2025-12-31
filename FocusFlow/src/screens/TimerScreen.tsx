@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Modal, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Modal, Platform, AppState, AppStateStatus } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withTiming } from 'react-native-reanimated';
 import { COLORS, FONTS, SPACING, LAYOUT } from '../constants/Theme';
@@ -41,8 +41,12 @@ export default function TimerScreen() {
         shortBreakDuration,
         longBreakDuration,
         soundEnabled,
-        checkDailyReset // Destructure checkDailyReset
+        checkDailyReset,
+        restoreTimerState,
+        getDailyProgress,
     } = useTimerStore();
+
+    const dailyProgress = getDailyProgress();
 
     const { tasks, selectedTaskId, selectTask, incrementActual } = useTaskStore();
     const activeTask = tasks.find(t => t.id === selectedTaskId);
@@ -57,12 +61,45 @@ export default function TimerScreen() {
     useEffect(() => {
         loadSounds(); // Preload sounds
         checkDailyReset(); // Check for daily reset on mount
+        restoreTimerState(); // Restore timer state if app was closed while running
         if (Platform.OS !== 'web') {
             registerForPushNotificationsAsync();
         }
     }, []);
 
-    // ... (sound effect hooks remain the same) ...
+    // Handle app state changes (background/foreground)
+    useEffect(() => {
+        const handleAppStateChange = (nextAppState: AppStateStatus) => {
+            if (nextAppState === 'active') {
+                // App came to foreground
+                checkDailyReset();
+                restoreTimerState();
+            }
+        };
+
+        const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+        return () => {
+            subscription.remove();
+        };
+    }, [checkDailyReset, restoreTimerState]);
+
+    // Handle mode change (timer completion)
+    useEffect(() => {
+        if (prevModeRef.current !== mode) {
+            // Mode changed - timer completed
+            const previousMode = prevModeRef.current;
+            prevModeRef.current = mode;
+
+            // Send notification and play sound
+            if (Platform.OS !== 'web') {
+                sendTimerCompleteNotification(previousMode);
+            }
+            if (soundEnabled) {
+                playSound('complete');
+            }
+        }
+    }, [mode, soundEnabled]);
 
     // Sync Timer Logic
     useEffect(() => {
@@ -70,8 +107,6 @@ export default function TimerScreen() {
         if (status === 'running') {
             interval = setInterval(() => {
                 tick();
-                // Optional: Play tick sound? Maybe too annoying. 
-                // playSound('tick'); 
             }, 1000);
         }
         return () => clearInterval(interval);
@@ -172,6 +207,27 @@ export default function TimerScreen() {
                         {activeTask ? activeTask.title : 'Select a task to focus on'}
                     </Text>
                 </TouchableOpacity>
+            </View>
+
+            {/* Daily Goal Progress */}
+            <View style={styles.dailyGoalContainer}>
+                <Text style={styles.dailyGoalText}>
+                    {dailyProgress.current}/{dailyProgress.goal} Pomodoros
+                </Text>
+                <View style={styles.dailyGoalBarBg}>
+                    <View
+                        style={[
+                            styles.dailyGoalBarFill,
+                            {
+                                width: `${dailyProgress.percentage}%`,
+                                backgroundColor: dailyProgress.percentage >= 100 ? COLORS.primary : COLORS.secondary,
+                            },
+                        ]}
+                    />
+                </View>
+                {dailyProgress.percentage >= 100 && (
+                    <Text style={styles.dailyGoalComplete}>Goal Complete!</Text>
+                )}
             </View>
 
             <Text style={[styles.modeLabel, { color: getModeColor() }]}>{getModeLabel()}</Text>
@@ -295,6 +351,35 @@ const styles = StyleSheet.create({
         borderRadius: LAYOUT.borderRadius.circle,
         gap: SPACING.s,
         maxWidth: '80%',
+    },
+    dailyGoalContainer: {
+        position: 'absolute',
+        top: 120,
+        width: '70%',
+        alignItems: 'center',
+        zIndex: 5,
+    },
+    dailyGoalText: {
+        color: COLORS.textSecondary,
+        fontSize: FONTS.size.s,
+        marginBottom: SPACING.xs,
+    },
+    dailyGoalBarBg: {
+        width: '100%',
+        height: 6,
+        backgroundColor: COLORS.surface,
+        borderRadius: 3,
+        overflow: 'hidden',
+    },
+    dailyGoalBarFill: {
+        height: '100%',
+        borderRadius: 3,
+    },
+    dailyGoalComplete: {
+        color: COLORS.primary,
+        fontSize: FONTS.size.xs,
+        fontWeight: 'bold',
+        marginTop: SPACING.xs,
     },
     activeTaskText: {
         color: COLORS.text,

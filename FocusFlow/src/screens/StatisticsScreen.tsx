@@ -24,17 +24,26 @@ export default function StatisticsScreen() {
     const totalTasks = tasks.length;
     const totalActualPomodoros = tasks.reduce((sum, t) => sum + t.pomodorosActual, 0);
 
-    // Mock weekly data (in a real app, this would come from persistent storage)
-    const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const today = new Date().getDay();
-    const adjustedToday = today === 0 ? 6 : today - 1; // Convert to Mon=0 format
+    // Get real weekly data from store
+    const { getWeeklyData } = useTimerStore();
+    const weeklyData = getWeeklyData();
 
-    // Generate mock weekly data with today having actual data
-    const weeklyData = weekDays.map((_, index) => {
-        if (index === adjustedToday) return dailyPomodoros;
-        if (index < adjustedToday) return Math.floor(Math.random() * 8); // Past days
-        return 0; // Future days
-    });
+    // Week days labels (last 7 days ending today)
+    const getWeekDayLabels = (): string[] => {
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const labels: string[] = [];
+        const today = new Date();
+
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(today.getDate() - i);
+            labels.push(days[date.getDay()]);
+        }
+        return labels;
+    };
+
+    const weekDays = getWeekDayLabels();
+    const adjustedToday = 6; // Today is always the last item (index 6)
 
     const maxWeeklyPomodoros = Math.max(...weeklyData, 1);
     const barWidth = (width - SPACING.m * 4) / 7 - 8;

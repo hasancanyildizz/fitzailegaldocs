@@ -26,6 +26,9 @@ interface HabitContextType {
     updateHabit: (id: string, updates: Partial<Habit>) => Promise<void>;
     toggleCheckIn: (habitId: string) => void;
     getHabitsWithStatus: () => HabitWithStatus[];
+    getArchivedHabits: () => HabitWithStatus[];
+    archiveHabit: (id: string) => Promise<void>;
+    unarchiveHabit: (id: string) => Promise<void>;
     requestNotificationPermission: () => Promise<boolean>;
     useStreakFreeze: (habitId: string) => boolean; // Use a freeze to save streak
     canUseStreakFreeze: (habitId: string) => boolean; // Check if freeze can be used
@@ -109,7 +112,201 @@ export const HabitProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
 
-    // ... (existing functions: addHabit, deleteHabit, updateHabit, toggleCheckIn, getHabitsWithStatus, requestNotificationPermission, canUseStreakFreeze, useStreakFreeze) ...
+    const addHabit = async (habitData: Omit<Habit, 'id' | 'createdAt'>) => {
+        const newHabit: Habit = {
+            ...habitData,
+            id: generateId(),
+            createdAt: new Date().toISOString(),
+        };
+        setHabits((prev) => [...prev, newHabit]);
+
+        // Schedule notification if reminder is set
+        if (newHabit.reminderTime) {
+            await scheduleHabitReminder(newHabit, newHabit.reminderTime);
+        }
+    };
+
+    const deleteHabit = async (id: string) => {
+        await cancelHabitReminder(id);
+        setHabits((prev) => prev.filter((h) => h.id !== id));
+        setCheckIns((prev) => prev.filter((c) => c.habitId !== id));
+    };
+
+    const updateHabit = async (id: string, updates: Partial<Habit>) => {
+        setHabits((prev) =>
+            prev.map((h) => (h.id === id ? { ...h, ...updates } : h))
+        );
+
+        // Update notification if reminder changed
+        const habit = habits.find((h) => h.id === id);
+        if (habit) {
+            if (habit.notificationId) {
+                await cancelHabitReminder(habit.notificationId);
+            }
+            const updatedHabit = { ...habit, ...updates };
+            if (updatedHabit.reminderTime) {
+                await scheduleHabitReminder(updatedHabit, updatedHabit.reminderTime);
+            }
+        }
+    };
+
+    const toggleCheckIn = (habitId: string) => {
+        const today = getToday();
+        const existingCheckIn = checkIns.find(
+            (c) => c.habitId === habitId && c.date === today
+        );
+
+        if (existingCheckIn) {
+            // Remove check-in
+            setCheckIns((prev) =>
+                prev.filter((c) => !(c.habitId === habitId && c.date === today))
+            );
+        } else {
+            // Add check-in
+            const newCheckIn: CheckIn = {
+                habitId,
+                date: today,
+                completedAt: new Date().toISOString(),
+            };
+            setCheckIns((prev) => [...prev, newCheckIn]);
+
+            // Calculate XP reward
+            const habit = habits.find((h) => h.id === habitId);
+            if (habit) {
+                const currentStreak = calculateStreak(
+                    [...checkIns, newCheckIn],
+                    habitId,
+                    habit.frequency,
+                    habit.targetDays
+                );
+                const xpGained = calculateXP(currentStreak);
+
+                // Earn a streak freeze every 7 days of streak
+                const earnedFreeze = currentStreak > 0 && currentStreak % 7 === 0 ? 1 : 0;
+
+                setUserProgress((prev) => {
+                    const newXP = prev.xp + xpGained;
+                    return {
+                        xp: newXP,
+                        level: calculateLevel(newXP),
+                        streakFreezes: prev.streakFreezes + earnedFreeze,
+                    };
+                });
+            }
+        }
+    };
+
+    const getHabitsWithStatus = (): HabitWithStatus[] => {
+        return habits
+            .filter((habit) => !habit.archived) // Only show non-archived habits
+            .map((habit) => {
+                const completedToday = isCompletedToday(checkIns, habit.id);
+                const streak = calculateStreak(checkIns, habit.id, habit.frequency, habit.targetDays);
+                const stats = calculateHabitStats(checkIns, habit.id, habit.createdAt, habit.frequency, habit.targetDays);
+
+                return {
+                    ...habit,
+                    isCompletedToday: completedToday,
+                    streak,
+                    stats,
+                };
+            });
+    };
+
+    const getArchivedHabits = (): HabitWithStatus[] => {
+        return habits
+            .filter((habit) => habit.archived)
+            .map((habit) => {
+                const completedToday = isCompletedToday(checkIns, habit.id);
+                const streak = calculateStreak(checkIns, habit.id, habit.frequency, habit.targetDays);
+                const stats = calculateHabitStats(checkIns, habit.id, habit.createdAt, habit.frequency, habit.targetDays);
+
+                return {
+                    ...habit,
+                    isCompletedToday: completedToday,
+                    streak,
+                    stats,
+                };
+            });
+    };
+
+    const archiveHabit = async (id: string): Promise<void> => {
+        const habit = habits.find((h) => h.id === id);
+        if (habit?.notificationId) {
+            await cancelHabitReminder(habit.notificationId);
+        }
+        setHabits((prev) =>
+            prev.map((h) => (h.id === id ? { ...h, archived: true } : h))
+        );
+    };
+
+    const unarchiveHabit = async (id: string): Promise<void> => {
+        const habit = habits.find((h) => h.id === id);
+        setHabits((prev) =>
+            prev.map((h) => (h.id === id ? { ...h, archived: false } : h))
+        );
+
+        // Reschedule reminder if it was set
+        if (habit?.reminderTime) {
+            await scheduleHabitReminder({ ...habit, archived: false }, habit.reminderTime);
+        }
+    };
+
+    const requestNotificationPermission = async (): Promise<boolean> => {
+        return await requestNotificationPermissions();
+    };
+
+    const canUseStreakFreeze = (habitId: string): boolean => {
+        if (userProgress.streakFreezes <= 0) return false;
+
+        const yesterday = getYesterday();
+        const today = getToday();
+
+        // Check if yesterday was missed
+        const yesterdayCheckIn = checkIns.find(
+            (c) => c.habitId === habitId && c.date === yesterday
+        );
+        if (yesterdayCheckIn) return false; // Yesterday was completed, no need for freeze
+
+        // Check if today is already completed
+        const todayCheckIn = checkIns.find(
+            (c) => c.habitId === habitId && c.date === today
+        );
+        if (todayCheckIn) return false; // Today already done
+
+        // Check if there's an existing streak to save
+        const habit = habits.find((h) => h.id === habitId);
+        if (!habit) return false;
+
+        // Calculate what the streak would be if yesterday was completed
+        // to verify there's actually a streak worth saving
+        const simulatedCheckIns = [...checkIns, { habitId, date: yesterday, completedAt: '' }];
+        const potentialStreak = calculateStreak(simulatedCheckIns, habitId, habit.frequency, habit.targetDays);
+
+        // Only allow freeze if there's a streak of at least 2 to save
+        return potentialStreak >= 2;
+    };
+
+    const useStreakFreeze = (habitId: string): boolean => {
+        if (!canUseStreakFreeze(habitId)) return false;
+
+        const yesterday = getYesterday();
+
+        // Add a "fake" check-in for yesterday to preserve streak
+        const freezeCheckIn: CheckIn = {
+            habitId,
+            date: yesterday,
+            completedAt: new Date().toISOString(),
+        };
+
+        setCheckIns((prev) => [...prev, freezeCheckIn]);
+        setUserProgress((prev) => ({
+            ...prev,
+            streakFreezes: prev.streakFreezes - 1,
+        }));
+
+        return true;
+    };
 
     const updateUserName = (name: string) => {
         setUserName(name);
@@ -144,6 +341,9 @@ export const HabitProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 updateHabit,
                 toggleCheckIn,
                 getHabitsWithStatus,
+                getArchivedHabits,
+                archiveHabit,
+                unarchiveHabit,
                 requestNotificationPermission,
                 useStreakFreeze,
                 canUseStreakFreeze,

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,17 +17,98 @@ import { COLORS, SPACING, FONTS, LAYOUT } from '../constants/Theme';
 import { useHabitContext } from '../context/HabitContext';
 import { HabitCard } from '../components/HabitCard';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { getXPProgress } from '../utils/streakUtils';
+import { getXPProgress, calculateXP, calculateStreak } from '../utils/streakUtils';
+import { Toast } from '../components/Toast';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
 export default function HomeScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
-  const { userProgress, getHabitsWithStatus, toggleCheckIn, deleteHabit, isLoading, userName } = useHabitContext();
+  const { userProgress, getHabitsWithStatus, toggleCheckIn, deleteHabit, archiveHabit, isLoading, userName, checkIns } = useHabitContext();
 
-  const habits = getHabitsWithStatus();
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'info' | 'warning'>('success');
+  const prevLevelRef = useRef(userProgress.level);
+
+  const [sortBy, setSortBy] = useState<'default' | 'streak' | 'name'>('default');
+  const [showCompleted, setShowCompleted] = useState(true);
+
+  const rawHabits = getHabitsWithStatus();
   const xpProgress = getXPProgress(userProgress.xp);
-  const completedToday = habits.filter((h) => h.isCompletedToday).length;
+  const completedToday = rawHabits.filter((h) => h.isCompletedToday).length;
+
+  // Sort and filter habits
+  const habits = React.useMemo(() => {
+    let sorted = [...rawHabits];
+
+    // Filter out completed if needed
+    if (!showCompleted) {
+      sorted = sorted.filter(h => !h.isCompletedToday);
+    }
+
+    // Sort habits
+    switch (sortBy) {
+      case 'streak':
+        sorted.sort((a, b) => b.streak - a.streak);
+        break;
+      case 'name':
+        sorted.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+      default:
+        // Move completed habits to bottom
+        sorted.sort((a, b) => {
+          if (a.isCompletedToday === b.isCompletedToday) return 0;
+          return a.isCompletedToday ? 1 : -1;
+        });
+    }
+
+    return sorted;
+  }, [rawHabits, sortBy, showCompleted]);
+
+  // Check for level up
+  useEffect(() => {
+    if (userProgress.level > prevLevelRef.current) {
+      setToastMessage(`Level Up! You're now Level ${userProgress.level}!`);
+      setToastType('success');
+      setToastVisible(true);
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    }
+    prevLevelRef.current = userProgress.level;
+  }, [userProgress.level]);
+
+  const handleCheckIn = (habitId: string) => {
+    const habit = habits.find(h => h.id === habitId);
+    if (!habit) return;
+
+    const wasCompleted = habit.isCompletedToday;
+    toggleCheckIn(habitId);
+
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+
+    if (!wasCompleted) {
+      // Calculate XP gained
+      const newStreak = habit.streak + 1;
+      const xpGained = calculateXP(newStreak);
+
+      // Check for streak milestones
+      if (newStreak === 7) {
+        setToastMessage(`+${xpGained} XP! 1 Week Streak + Freeze Earned!`);
+      } else if (newStreak === 30) {
+        setToastMessage(`+${xpGained} XP! 30 Day Streak! Amazing!`);
+      } else if (newStreak === 100) {
+        setToastMessage(`+${xpGained} XP! 100 Day Streak! Legendary!`);
+      } else {
+        setToastMessage(`+${xpGained} XP!`);
+      }
+      setToastType('success');
+      setToastVisible(true);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -44,6 +125,14 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+
+      {/* Toast Notification */}
+      <Toast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        onHide={() => setToastVisible(false)}
+      />
 
       {/* Header */}
       <View style={styles.header}>
@@ -102,7 +191,35 @@ export default function HomeScreen() {
 
       {/* Habit List */}
       <ScrollView contentContainerStyle={styles.habitList}>
-        <Text style={styles.sectionTitle}>Today's Habits</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Today's Habits</Text>
+          <View style={styles.sortButtons}>
+            <TouchableOpacity
+              style={[styles.sortButton, sortBy === 'default' && styles.sortButtonActive]}
+              onPress={() => setSortBy('default')}
+            >
+              <Text style={[styles.sortButtonText, sortBy === 'default' && styles.sortButtonTextActive]}>
+                Default
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.sortButton, sortBy === 'streak' && styles.sortButtonActive]}
+              onPress={() => setSortBy('streak')}
+            >
+              <Text style={[styles.sortButtonText, sortBy === 'streak' && styles.sortButtonTextActive]}>
+                Streak
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.sortButton, sortBy === 'name' && styles.sortButtonActive]}
+              onPress={() => setSortBy('name')}
+            >
+              <Text style={[styles.sortButtonText, sortBy === 'name' && styles.sortButtonTextActive]}>
+                A-Z
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {habits.length === 0 ? (
           <View style={styles.emptyState}>
@@ -119,8 +236,11 @@ export default function HomeScreen() {
               streak={habit.streak}
               completed={habit.isCompletedToday}
               color={habit.color}
-              onCheckIn={() => toggleCheckIn(habit.id)}
+              frequency={habit.frequency}
+              targetDays={habit.targetDays}
+              onCheckIn={() => handleCheckIn(habit.id)}
               onEdit={() => navigation.navigate('EditHabit', { habitId: habit.id })}
+              onArchive={() => archiveHabit(habit.id)}
               onDelete={() => deleteHabit(habit.id)}
             />
           ))
@@ -248,11 +368,37 @@ const styles = StyleSheet.create({
     padding: SPACING.m,
     paddingBottom: 100,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.m,
+  },
   sectionTitle: {
     color: COLORS.text,
     fontSize: FONTS.size.l,
     fontWeight: 'bold',
-    marginBottom: SPACING.m,
+  },
+  sortButtons: {
+    flexDirection: 'row',
+    gap: SPACING.xs,
+  },
+  sortButton: {
+    paddingHorizontal: SPACING.s,
+    paddingVertical: SPACING.xs,
+    borderRadius: LAYOUT.borderRadius.s,
+    backgroundColor: COLORS.surface,
+  },
+  sortButtonActive: {
+    backgroundColor: COLORS.primary,
+  },
+  sortButtonText: {
+    color: COLORS.textSecondary,
+    fontSize: FONTS.size.s,
+  },
+  sortButtonTextActive: {
+    color: COLORS.background,
+    fontWeight: '600',
   },
   emptyState: {
     alignItems: 'center',

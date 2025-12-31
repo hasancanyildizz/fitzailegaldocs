@@ -9,21 +9,52 @@ import {
     SafeAreaView,
     Switch,
     Linking,
+    Share,
+    Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useHabitContext } from '../context/HabitContext';
 import { COLORS, FONTS, SPACING, LAYOUT } from '../constants/Theme';
-import { X, Trash, User, Bell, Shield, FileText } from 'phosphor-react-native';
+import { X, Trash, User, Bell, Shield, FileText, Export, Archive } from 'phosphor-react-native';
 
 export default function SettingsScreen() {
     const navigation = useNavigation<any>();
-    const { userName, updateUserName, clearAllData, requestNotificationPermission } = useHabitContext();
+    const { userName, updateUserName, clearAllData, requestNotificationPermission, habits, checkIns, userProgress } = useHabitContext();
     const [name, setName] = useState(userName);
 
     const handleSaveName = () => {
         if (name.trim().length > 0) {
             updateUserName(name.trim());
             Alert.alert('Success', 'Profile name updated!');
+        }
+    };
+
+    const handleExportData = async () => {
+        try {
+            const exportData = {
+                exportDate: new Date().toISOString(),
+                version: '1.0',
+                userName,
+                userProgress,
+                habits,
+                checkIns,
+            };
+
+            const jsonString = JSON.stringify(exportData, null, 2);
+
+            if (Platform.OS === 'web') {
+                // Web: Copy to clipboard
+                navigator.clipboard.writeText(jsonString);
+                Alert.alert('Exported', 'Data copied to clipboard!');
+            } else {
+                // Mobile: Use Share API
+                await Share.share({
+                    message: jsonString,
+                    title: 'Habit Tracker Export',
+                });
+            }
+        } catch (error) {
+            Alert.alert('Error', 'Failed to export data');
         }
     };
 
@@ -118,8 +149,28 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
             </View>
 
-            <View style={[styles.section, styles.dangerZone]}>
+            <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Data Management</Text>
+                <TouchableOpacity
+                    style={styles.row}
+                    onPress={() => navigation.navigate('Archive')}
+                >
+                    <View style={styles.rowContent}>
+                        <Archive size={24} color={COLORS.text} />
+                        <Text style={styles.rowText}>Archived Habits</Text>
+                    </View>
+                    <View style={styles.chevron}>
+                        <Text style={{ color: COLORS.textSecondary }}>→</Text>
+                    </View>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.exportButton, { marginTop: SPACING.s }]} onPress={handleExportData}>
+                    <Export size={20} color={COLORS.primary} />
+                    <Text style={styles.exportButtonText}>Export Data</Text>
+                </TouchableOpacity>
+            </View>
+
+            <View style={[styles.section, styles.dangerZone]}>
+                <Text style={styles.sectionTitle}>Danger Zone</Text>
                 <TouchableOpacity style={styles.dangerButton} onPress={handleClearData}>
                     <Trash size={20} color="white" />
                     <Text style={styles.dangerButtonText}>Clear All Data</Text>
@@ -204,8 +255,24 @@ const styles = StyleSheet.create({
     chevron: {
         // Simple arrow
     },
+    exportButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: COLORS.surface,
+        padding: SPACING.m,
+        borderRadius: LAYOUT.borderRadius.m,
+        gap: SPACING.s,
+        borderWidth: 1,
+        borderColor: COLORS.primary,
+    },
+    exportButtonText: {
+        color: COLORS.primary,
+        fontWeight: 'bold',
+        fontSize: FONTS.size.m,
+    },
     dangerZone: {
-        marginTop: 'auto',
+        marginTop: SPACING.m,
         marginBottom: SPACING.xxl,
     },
     dangerButton: {
